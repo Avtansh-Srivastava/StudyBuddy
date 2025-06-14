@@ -26,17 +26,3 @@ dist-ssr
 
 
 /server/uploads/
-
-# Ignore node_modules (frontend & backend)
-node_modules/
-client/node_modules/
-server/node_modules/
-
-# Ignore environment files
-.env
-client/.env
-server/.env
-
-# Ignore build folders
-client/dist/
-server/uploads/
