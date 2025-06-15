@@ -3,9 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-const pdf = require('pdf-parse'); // Add this for PDF processing
+const pdf = require('pdf-parse'); // Add this package
 const app = express();
 
 // ======================
@@ -14,48 +12,39 @@ const app = express();
 app.use(cors({ 
   origin: 'http://localhost:5173',
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
 }));
-app.use(express.json());
+app.options('*', cors());
+app.use(express.json({ limit: '10mb' }));
 
-// Create necessary directories
-const ensureDirectoryExists = (dirPath) => {
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
+// Enhanced request logging
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  if (req.method === 'POST') {
+    console.log('Request body type:', req.headers['content-type']);
   }
-};
-
-const uploadsDir = path.join(__dirname, 'uploads');
-const tempDir = path.join(__dirname, 'temp');
-ensureDirectoryExists(uploadsDir);
-ensureDirectoryExists(tempDir);
+  next();
+});
 
 // ======================
 // 2. CONFIGURATION
 // ======================
 const DEEPINFRA_API_KEY = process.env.DEEPINFRA_API_KEY;
-const DEEPINFRA_MODEL = process.env.DEEPINFRA_MODEL || 'meta-llama/Meta-Llama-3-70B-Instruct';
-const MAX_FILE_SIZE = process.env.MAX_FILE_SIZE || 10 * 1024 * 1024; // 10MB default
+if (!DEEPINFRA_API_KEY) {
+  console.error("❌ CRITICAL: DEEPINFRA_API_KEY is missing from .env file!");
+}
+const DEEPINFRA_MODEL = 'meta-llama/Meta-Llama-3-70B-Instruct';
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 // ======================
 // 3. FILE UPLOAD SETUP
 // ======================
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, `pdf-${uniqueSuffix}${path.extname(file.originalname)}`);
-  }
-});
-
 const upload = multer({ 
-  storage: storage,
-  limits: { fileSize: parseInt(MAX_FILE_SIZE) },
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_FILE_SIZE },
   fileFilter: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (ext === '.pdf') {
+    if (file.mimetype === 'application/pdf') {
       cb(null, true);
     } else {
       cb(new Error('Only PDF files are allowed'), false);
@@ -64,31 +53,21 @@ const upload = multer({
 });
 
 // ======================
-// 4. HELPER FUNCTIONS
+// 4. PDF TEXT EXTRACTION
 // ======================
-const validateQuestion = (req, res, next) => {
-  const { question } = req.body;
-  if (!question?.trim()) {
-    return res.status(400).json({ 
-      success: false,
-      error: 'Question is required',
-      details: 'Please enter a valid question' 
-    });
-  }
-  next();
-};
-
-const processPDF = async (filePath) => {
+const extractTextFromPDF = async (buffer) => {
   try {
-    const dataBuffer = fs.readFileSync(filePath);
-    const data = await pdf(dataBuffer);
+    const data = await pdf(buffer);
     return data.text;
   } catch (error) {
-    console.error('PDF Processing Error:', error);
+    console.error('PDF Parse Error:', error);
     throw new Error('Failed to extract text from PDF');
   }
 };
 
+// ======================
+// 5. AI HELPER FUNCTION
+// ======================
 const getAIResponse = async (prompt) => {
   try {
     const response = await axios.post(
@@ -104,78 +83,79 @@ const getAIResponse = async (prompt) => {
           'Authorization': `Bearer ${DEEPINFRA_API_KEY}`,
           'Content-Type': 'application/json'
         },
-        timeout: 15000
+        timeout: 30000
       }
     );
-    return response.data.choices[0]?.message?.content;
+    return response.data.choices[0]?.message?.content || "No response from AI";
   } catch (error) {
     console.error('AI API Error:', error.response?.data || error.message);
-    throw error;
+    throw new Error(`AI service error: ${error.response?.data?.error?.message || error.message}`);
   }
 };
 
 // ======================
-// 5. API ENDPOINTS
+// 6. API ENDPOINTS
 // ======================
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    success: true,
-    status: 'operational',
-    timestamp: new Date().toISOString(),
-    services: { 
-      ai_service: DEEPINFRA_API_KEY ? 'available' : 'unavailable',
-      file_uploads: 'available'
-    }
-  });
-});
-
 app.post('/api/pdf/upload', upload.single('pdf'), async (req, res) => {
   try {
+    console.log('Received upload request with file:', req.file ? req.file.originalname : 'none');
+    
     if (!req.file) {
+      console.log('No file received in request');
       return res.status(400).json({ 
         success: false,
-        error: 'No file uploaded' 
+        error: 'No PDF file uploaded. Please select a file.' 
       });
     }
 
-    // Process the PDF
-    const pdfText = await processPDF(req.file.path);
-    
-    // Generate a summary using AI
-    let summary;
-    try {
-      summary = await getAIResponse(`Summarize this PDF content in 3-5 key points:\n\n${pdfText.substring(0, 5000)}`);
-    } catch (aiError) {
-      console.error('AI Summary Failed:', aiError);
-      summary = "Generated summary unavailable - here are the first 500 characters:\n\n" + pdfText.substring(0, 500);
+    // Extract text from PDF
+    const pdfText = await extractTextFromPDF(req.file.buffer);
+    if (!pdfText || pdfText.trim().length < 50) {
+      throw new Error('Extracted PDF text is too short or empty');
     }
+
+    console.log(`Extracted ${pdfText.length} characters from PDF`);
+
+    // Get AI summary
+    const summary = await getAIResponse(
+      `Create a detailed summary of this document:\n\n${pdfText.substring(0, 10000)}` +
+      `\n\nFocus on key concepts, main arguments, and important conclusions.` +
+      `Return the summary in clear paragraphs with proper formatting.`
+    );
 
     res.json({
       success: true,
-      originalFilename: req.file.originalname,
       summary: summary,
-      textLength: pdfText.length,
-      pages: pdfText.split('\f').length
+      filename: req.file.originalname,
+      textLength: pdfText.length
     });
 
   } catch (error) {
     console.error('PDF Processing Error:', error);
     res.status(500).json({
       success: false,
-      error: 'PDF processing failed',
-      details: error.message
+      error: error.message || 'Failed to process PDF',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
 
-app.post('/api/ai/ask', validateQuestion, async (req, res) => {
+// Add this after the /api/pdf/upload endpoint in index.js
+app.post('/api/ask', async (req, res) => {
   try {
     const { question } = req.body;
     
-    if (!DEEPINFRA_API_KEY) {
-      return res.json({
+    if (!question || question.trim().length < 3) {
+      return res.status(400).json({ 
         success: false,
-        response: "AI service is not configured",
+        error: 'Question must be at least 3 characters'
+      });
+    }
+    
+    if (!DEEPINFRA_API_KEY) {
+      return res.status(500).json({ 
+        success: false,
+        error: "AI service is not configured",
         suggestion: "Please set up your DeepInfra API key"
       });
     }
@@ -184,70 +164,17 @@ app.post('/api/ai/ask', validateQuestion, async (req, res) => {
     
     res.json({
       success: true,
-      response: answer || "No content received from AI",
-      model: DEEPINFRA_MODEL
+      response: answer
     });
 
   } catch (error) {
     console.error('AI Question Error:', error);
     res.status(500).json({
       success: false,
-      error: 'AI service unavailable',
-      details: error.message,
-      fallback: getFallbackResponse(req.body.question)
+      error: 'Failed to process your question',
+      details: error.message
     });
   }
-});
-
-// ======================
-// 6. DOCUMENTATION & ERROR HANDLING
-// ======================
-app.get('/', (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>StudyBuddy API</title>
-      <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 2rem; }
-        .status { padding: 1rem; background: #f5f5f5; border-radius: 5px; margin-bottom: 2rem; }
-        .endpoint { background: #f0f0f0; padding: 1rem; border-radius: 5px; margin-bottom: 1rem; }
-        code { background: #e0e0e0; padding: 0.2rem 0.4rem; border-radius: 3px; }
-      </style>
-    </head>
-    <body>
-      <h1>StudyBuddy API</h1>
-      <div class="status">
-        <h2>Service Status</h2>
-        <p><strong>AI Service:</strong> ${DEEPINFRA_API_KEY ? '✅ Configured' : '⚠️ Not Configured'}</p>
-        <p><strong>PDF Processing:</strong> ✅ Available</p>
-        <p><strong>Max File Size:</strong> ${MAX_FILE_SIZE / (1024 * 1024)}MB</p>
-      </div>
-      
-      <h2>API Endpoints</h2>
-      
-      <div class="endpoint">
-        <h3>POST /api/pdf/upload</h3>
-        <p>Upload PDF files for processing</p>
-        <pre>curl -X POST -F "pdf=@yourfile.pdf" http://localhost:3000/api/pdf/upload</pre>
-      </div>
-      
-      <div class="endpoint">
-        <h3>POST /api/ai/ask</h3>
-        <p>Ask questions to the AI assistant</p>
-        <pre>curl -X POST -H "Content-Type: application/json" -d '{"question":"Your question"}' http://localhost:3000/api/ai/ask</pre>
-      </div>
-    </body>
-    </html>
-  `);
-});
-
-app.use((req, res) => {
-  res.status(404).json({ 
-    success: false,
-    error: 'Endpoint not found',
-    documentation: 'http://localhost:3000'
-  });
 });
 
 // ======================
@@ -260,16 +187,8 @@ app.listen(PORT, () => {
    StudyBuddy Backend Service
   ==========================================
   Server running on: http://localhost:${PORT}
-  AI Service: ${DEEPINFRA_API_KEY ? '✅ Ready' : '⚠️ Disabled'}
-  PDF Processing: ✅ Enabled
-  Max File Size: ${MAX_FILE_SIZE / (1024 * 1024)}MB
-  Upload Directory: ${uploadsDir}
+  AI Service: ${DEEPINFRA_API_KEY ? '✅ Enabled' : '❌ Disabled'}
+  Max PDF Size: ${MAX_FILE_SIZE / (1024 * 1024)}MB
   ==========================================
   `);
-});
-
-// Cleanup temp files on exit
-process.on('SIGINT', () => {
-  console.log('\nCleaning up before shutdown...');
-  process.exit();
 });

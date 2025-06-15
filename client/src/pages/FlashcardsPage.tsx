@@ -1,222 +1,199 @@
+// client/src/pages/FlashcardsPage.tsx
 import React, { useState } from 'react';
-import { useFlashcards, Flashcard } from '../contexts/FlashcardContext';
-import FlashcardItem from '../components/FlashcardItem';
-import { Plus, Download, Upload, Trash2 } from 'lucide-react';
+import { useFlashcards } from '../contexts/FlashcardContext';
+import { Trash2, Edit, Check, Plus } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
-const FlashcardsPage: React.FC = () => {
-  const { 
-    flashcards, 
-    addFlashcard, 
-    deleteFlashcard, 
-    clearAllFlashcards,
-    exportFlashcards,
-    importFlashcards,
-    updateLastReviewed
-  } = useFlashcards();
-  
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [newQuestion, setNewQuestion] = useState('');
-  const [newAnswer, setNewAnswer] = useState('');
-  const [importText, setImportText] = useState('');
-  const [showImportModal, setShowImportModal] = useState(false);
-  
-  const handleAddFlashcard = (e: React.FormEvent) => {
+const FlashcardsPage = () => {
+  const { flashcards, addFlashcard, updateFlashcard, deleteFlashcard } = useFlashcards();
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+  const [currentId, setCurrentId] = useState('');
+  const [flippedCards, setFlippedCards] = useState<Record<string, boolean>>({});
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newQuestion.trim() && newAnswer.trim()) {
-      addFlashcard(newQuestion, newAnswer);
-      setNewQuestion('');
-      setNewAnswer('');
-      setShowAddForm(false);
-    }
-  };
-  
-  const handleExport = () => {
-    const jsonData = exportFlashcards();
-    const blob = new Blob([jsonData], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
     
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `studybuddy-flashcards-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-  
-  const handleImport = () => {
-    if (importFlashcards(importText)) {
-      setImportText('');
-      setShowImportModal(false);
-      alert('Flashcards imported successfully!');
+    if (!question.trim() || !answer.trim()) {
+      toast.error('Please enter both question and answer');
+      return;
+    }
+
+    if (isEditing) {
+      updateFlashcard(currentId, question, answer);
     } else {
-      alert('Invalid flashcard data. Please check the format and try again.');
+      addFlashcard(question, answer);
+    }
+
+    resetForm();
+  };
+
+  const handleEdit = (id: string) => {
+    const cardToEdit = flashcards.find(card => card.id === id);
+    if (cardToEdit) {
+      setQuestion(cardToEdit.question);
+      setAnswer(cardToEdit.answer);
+      setCurrentId(id);
+      setIsEditing(true);
+      // Scroll to form
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
-  
+
+  const handleDelete = (id: string) => {
+    if (window.confirm('Are you sure you want to delete this flashcard?')) {
+      deleteFlashcard(id);
+    }
+  };
+
+  const toggleFlip = (id: string) => {
+    setFlippedCards(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+
+  const resetForm = () => {
+    setQuestion('');
+    setAnswer('');
+    setIsEditing(false);
+    setCurrentId('');
+  };
+
   return (
-    <div>
-      <div className="max-w-6xl mx-auto mb-8">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h1 className="text-3xl font-bold text-primary-900 mb-2">Flashcards</h1>
-            <p className="text-gray-600">
-              Create and review flashcards to reinforce your learning. Flashcards are saved locally and available offline.
-            </p>
+    <div className="max-w-4xl mx-auto p-4">
+      <div className="text-center mb-8">
+        <h1 className="text-3xl font-bold text-gray-800 mb-2">Flashcards</h1>
+        <p className="text-gray-600">Create, study, and master your knowledge</p>
+      </div>
+
+      {/* Flashcard Form */}
+      <div className="bg-white rounded-xl shadow-md p-6 mb-8">
+        <h2 className="text-xl font-semibold mb-4">
+          {isEditing ? 'Edit Flashcard' : 'Create New Flashcard'}
+        </h2>
+        
+        <form onSubmit={handleSubmit}>
+          <div className="mb-4">
+            <label className="block text-gray-700 mb-2">Question</label>
+            <textarea
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              rows={3}
+              placeholder="Enter your question"
+              required
+            />
           </div>
           
-          <div className="flex gap-2">
-            <button 
-              onClick={() => setShowAddForm(true)}
-              className="btn btn-primary"
+          <div className="mb-4">
+            <label className="block text-gray-700 mb-2">Answer</label>
+            <textarea
+              value={answer}
+              onChange={(e) => setAnswer(e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              rows={3}
+              placeholder="Enter the answer"
+              required
+            />
+          </div>
+          
+          <div className="flex gap-3">
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 flex items-center gap-1"
             >
-              <Plus size={20} className="mr-1" />
-              New Flashcard
+              {isEditing ? (
+                <>
+                  <Check size={18} />
+                  Update
+                </>
+              ) : (
+                <>
+                  <Plus size={18} />
+                  Add Flashcard
+                </>
+              )}
             </button>
             
-            <div className="dropdown dropdown-end">
-              <div tabIndex={0} role="button" className="btn btn-outline">
-                More Actions
-              </div>
-              <ul tabIndex={0} className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
-                <li>
-                  <button onClick={handleExport}>
-                    <Download size={16} />
-                    Export Flashcards
-                  </button>
-                </li>
-                <li>
-                  <button onClick={() => setShowImportModal(true)}>
-                    <Upload size={16} />
-                    Import Flashcards
-                  </button>
-                </li>
-                {flashcards.length > 0 && (
-                  <li>
-                    <button onClick={clearAllFlashcards} className="text-error">
-                      <Trash2 size={16} />
-                      Clear All
-                    </button>
-                  </li>
-                )}
-              </ul>
-            </div>
+            {isEditing && (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
+              >
+                Cancel
+              </button>
+            )}
           </div>
-        </div>
-        
-        {/* Flashcard grid */}
-        {flashcards.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {flashcards.map((card) => (
-              <FlashcardItem 
-                key={card.id} 
-                flashcard={card} 
-                onDelete={deleteFlashcard}
-                onReview={updateLastReviewed}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-12 bg-base-200 rounded-lg">
-            <p className="text-lg mb-4">No flashcards yet</p>
-            <button 
-              onClick={() => setShowAddForm(true)}
-              className="btn btn-primary"
-            >
-              Create your first flashcard
-            </button>
-          </div>
-        )}
+        </form>
       </div>
-      
-      {/* Add Flashcard Modal */}
-      {showAddForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-            <div className="p-6">
-              <h3 className="text-xl font-bold mb-4">Create New Flashcard</h3>
-              <form onSubmit={handleAddFlashcard}>
-                <div className="form-control mb-4">
-                  <label className="label">
-                    <span className="label-text">Question</span>
-                  </label>
-                  <input 
-                    type="text" 
-                    value={newQuestion}
-                    onChange={(e) => setNewQuestion(e.target.value)}
-                    className="input input-bordered w-full"
-                    placeholder="Enter your question"
-                    required
-                  />
+
+      {/* Flashcards Grid */}
+      {flashcards.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {flashcards.map((card) => (
+            <div 
+              key={card.id} 
+              className={`relative bg-white rounded-xl shadow-md overflow-hidden h-64 cursor-pointer transition-all duration-300 ${flippedCards[card.id] ? 'bg-blue-50' : ''}`}
+              onClick={() => toggleFlip(card.id)}
+            >
+              {/* Front of Card (Question) */}
+              <div className={`absolute inset-0 p-6 flex flex-col transition-all duration-500 ${flippedCards[card.id] ? 'opacity-0' : 'opacity-100'}`}>
+                <h3 className="font-semibold text-lg mb-2">Question</h3>
+                <div className="flex-grow overflow-auto">
+                  <p className="whitespace-pre-wrap">{card.question}</p>
                 </div>
-                <div className="form-control mb-6">
-                  <label className="label">
-                    <span className="label-text">Answer</span>
-                  </label>
-                  <textarea 
-                    value={newAnswer}
-                    onChange={(e) => setNewAnswer(e.target.value)}
-                    className="textarea textarea-bordered w-full h-32"
-                    placeholder="Enter the answer"
-                    required
-                  />
+                <div className="text-xs text-gray-500 mt-2">
+                  Created: {new Date(card.createdAt).toLocaleDateString()}
                 </div>
-                <div className="flex justify-end gap-2">
+              </div>
+              
+              {/* Back of Card (Answer) */}
+              <div className={`absolute inset-0 p-6 flex flex-col transition-all duration-500 ${flippedCards[card.id] ? 'opacity-100' : 'opacity-0'}`}>
+                <h3 className="font-semibold text-lg mb-2">Answer</h3>
+                <div className="flex-grow overflow-auto">
+                  <p className="whitespace-pre-wrap">{card.answer}</p>
+                </div>
+                <div className="flex justify-between mt-4">
                   <button 
-                    type="button" 
-                    className="btn btn-outline"
-                    onClick={() => setShowAddForm(false)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEdit(card.id);
+                    }}
+                    className="text-blue-500 hover:text-blue-700 p-1"
+                    title="Edit"
                   >
-                    Cancel
+                    <Edit size={18} />
                   </button>
                   <button 
-                    type="submit" 
-                    className="btn btn-primary"
-                    disabled={!newQuestion.trim() || !newAnswer.trim()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(card.id);
+                    }}
+                    className="text-red-500 hover:text-red-700 p-1"
+                    title="Delete"
                   >
-                    Create Flashcard
+                    <Trash2 size={18} />
                   </button>
                 </div>
-              </form>
+              </div>
+              
+              <div className="absolute bottom-2 right-2 text-xs text-gray-400">
+                Click to flip
+              </div>
             </div>
-          </div>
+          ))}
         </div>
-      )}
-      
-      {/* Import Modal */}
-      {showImportModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-            <div className="p-6">
-              <h3 className="text-xl font-bold mb-4">Import Flashcards</h3>
-              <div className="form-control mb-6">
-                <label className="label">
-                  <span className="label-text">Paste JSON data</span>
-                </label>
-                <textarea 
-                  value={importText}
-                  onChange={(e) => setImportText(e.target.value)}
-                  className="textarea textarea-bordered w-full h-40"
-                  placeholder="Paste exported flashcard JSON here"
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <button 
-                  className="btn btn-outline"
-                  onClick={() => setShowImportModal(false)}
-                >
-                  Cancel
-                </button>
-                <button 
-                  className="btn btn-primary"
-                  onClick={handleImport}
-                  disabled={!importText.trim()}
-                >
-                  Import
-                </button>
-              </div>
-            </div>
+      ) : (
+        <div className="text-center py-12 bg-gray-50 rounded-xl">
+          <div className="mb-4 text-gray-400">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
           </div>
+          <p className="text-gray-600 text-lg">No flashcards yet. Create your first one!</p>
         </div>
       )}
     </div>

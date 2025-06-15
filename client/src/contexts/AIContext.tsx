@@ -1,47 +1,48 @@
-import React, { createContext, useState, useContext } from 'react';
+// client/src/contexts/AIContext.tsx
+import React, { createContext, useContext, useState, ReactNode } from 'react';
 
-type Message = {
-  sender: 'user' | 'ai';
-  text: string;
-};
-
-type AIContextType = {
-  messages: Message[];
-  sendMessage: (text: string) => Promise<void>;
+interface AIContextType {
+  response: string;
   isLoading: boolean;
-};
+  error: string;
+  askQuestion: (question: string) => Promise<void>;
+}
 
 const AIContext = createContext<AIContextType | undefined>(undefined);
 
-export const AIProvider = ({ children }: { children: React.ReactNode }) => {
-  const [messages, setMessages] = useState<Message[]>([]);
+export const AIProvider = ({ children }: { children: ReactNode }) => {
+  const [response, setResponse] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const sendMessage = async (text: string) => {
+  const askQuestion = async (question: string) => {
     setIsLoading(true);
-    const userMessage: Message = { sender: 'user', text };
-    setMessages(prev => [...prev, userMessage]);
+    setError('');
+    setResponse('');
     
     try {
-      const response = await fetch('http://localhost:3000/api/ai/ask', {
+      const response = await fetch('http://localhost:3000/api/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: text })
+        body: JSON.stringify({ question }),
       });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const data = await response.json();
-      setMessages(prev => [...prev, { sender: 'ai', text: data.response }]);
-    } catch (error) {
-      setMessages(prev => [...prev, { 
-        sender: 'ai', 
-        text: 'Error: ' + (error instanceof Error ? error.message : 'Failed to get response')
-      }]);
+      setResponse(data.response);
+    } catch (err) {
+      console.error('API Error:', err);
+      setError(err instanceof Error ? err.message : 'An unknown error occurred');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <AIContext.Provider value={{ messages, sendMessage, isLoading }}>
+    <AIContext.Provider value={{ response, isLoading, error, askQuestion }}>
       {children}
     </AIContext.Provider>
   );

@@ -1,169 +1,170 @@
 import React, { useState, useRef } from 'react';
+import { FileText, Loader2, Copy, AlertCircle, Check } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 const PDFSummaryPage = () => {
   const [summary, setSummary] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [fileName, setFileName] = useState('');
   const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
+    console.log('Selected file:', file.name, (file.size / 1024).toFixed(2) + 'KB');
+
+    // Enhanced validation
+    if (!file.name.endsWith('.pdf')) {
+      setError('Only PDF files are allowed');
+      toast.error('Please upload a PDF file');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setError('File size exceeds 10MB limit');
+      toast.error('File too large (max 10MB)');
+      return;
+    }
+
     setFileName(file.name);
     setIsLoading(true);
-    setSummary('');
     setError('');
-    
+    setSummary('');
+
     const formData = new FormData();
     formData.append('pdf', file);
 
     try {
+      console.log('Uploading file to server...');
       const response = await fetch('http://localhost:3000/api/pdf/upload', {
         method: 'POST',
-        body: formData
+        body: formData,
       });
+
+      const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(`Server responded with ${response.status}`);
+        throw new Error(data.error || `Server error: ${response.status}`);
       }
-      
-      const data = await response.json();
-      setSummary(data.summary || "Summary generated successfully!");
-    } catch (error) {
-      console.error('Upload failed:', error);
-      setError('Failed to generate summary. Please try again.');
-      setSummary('');
+
+      console.log('Received summary:', data.summary.length, 'characters');
+      setSummary(data.summary);
+      toast.success(`Summary generated for ${file.name}`);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to generate summary';
+      console.error('Upload error:', errorMessage);
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
   };
 
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(summary);
+      setCopied(true);
+      toast.success('Summary copied to clipboard!');
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      toast.error('Failed to copy text');
+    }
+  };
+
   const triggerFileInput = () => {
-    if (fileInputRef.current) {
+    if (!isLoading && fileInputRef.current) {
       fileInputRef.current.click();
     }
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <div className="text-center mb-10">
-        <h1 className="text-3xl font-bold text-gray-800 mb-2">PDF Summary Generator</h1>
+    <div className="max-w-4xl mx-auto p-4 md:p-6">
+      <div className="text-center mb-8 md:mb-10">
+        <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">PDF Summary Generator</h1>
         <p className="text-gray-600">
-          Upload your PDF documents and get concise AI-powered summaries instantly
+          Upload PDF documents (max 10MB) to get AI-powered summaries
         </p>
       </div>
 
       {/* Upload Section */}
       <div 
-        className={`border-2 border-dashed rounded-xl p-8 text-center mb-8 cursor-pointer transition-all
-          ${isLoading ? 'border-gray-300 bg-gray-50' : 'border-blue-300 hover:border-blue-500 hover:bg-blue-50'}`}
+        className={`border-2 border-dashed rounded-xl p-6 md:p-8 text-center mb-6 transition-all
+          ${isLoading 
+            ? 'border-gray-300 bg-gray-50 cursor-wait' 
+            : error 
+              ? 'border-red-300 bg-red-50 cursor-pointer'
+              : 'border-blue-300 hover:border-blue-500 hover:bg-blue-50 cursor-pointer'
+          }`}
         onClick={triggerFileInput}
       >
         <input
           type="file"
           ref={fileInputRef}
-          accept=".pdf"
+          name="pdf"  // Important for multer
+          accept=".pdf,application/pdf"
           onChange={handleUpload}
           className="hidden"
           disabled={isLoading}
         />
         
-        <div className="mb-4">
-          <div className="inline-block bg-blue-100 p-3 rounded-full">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-            </svg>
-          </div>
+        <div className="flex flex-col items-center">
+          {isLoading ? (
+            <Loader2 className="h-10 w-10 animate-spin text-blue-500 mb-3" />
+          ) : error ? (
+            <AlertCircle className="h-10 w-10 text-red-500 mb-3" />
+          ) : (
+            <FileText className="h-10 w-10 text-blue-500 mb-3" />
+          )}
+          
+          <p className={`font-medium ${error ? 'text-red-700' : 'text-gray-700'}`}>
+            {fileName || 'Click to select PDF'}
+          </p>
+          <p className={`text-sm ${error ? 'text-red-600' : 'text-gray-500'} mt-1`}>
+            {error || (fileName ? 'Click to change file' : 'Supports .pdf files up to 10MB')}
+          </p>
         </div>
-        
-        <p className="text-lg font-medium text-gray-700 mb-2">
-          {fileName || "Click to select a PDF file"}
-        </p>
-        
-        <p className="text-gray-500 mb-4">
-          {fileName ? "Click to change file" : "or drag and drop your PDF here"}
-        </p>
-        
-        <button 
-          className={`px-5 py-2 rounded-md font-medium ${
-            isLoading 
-              ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-              : 'bg-blue-500 text-white hover:bg-blue-600'
-          }`}
-          disabled={isLoading}
-        >
-          {isLoading ? 'Processing...' : 'Select PDF'}
-        </button>
       </div>
-
-      {/* Status Indicators */}
-      {isLoading && (
-        <div className="flex flex-col items-center mb-6">
-          <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-3"></div>
-          <p className="text-gray-600">Analyzing your document...</p>
-        </div>
-      )}
-
-      {error && (
-        <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm text-red-700">{error}</p>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Results Section */}
       {summary && (
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-800">Document Summary</h2>
-            <p className="text-sm text-gray-500 mt-1">Based on {fileName}</p>
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-8">
+          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-800">Document Summary</h2>
+              <p className="text-sm text-gray-500 mt-1">{fileName}</p>
+            </div>
+            <button 
+              onClick={copyToClipboard}
+              className="flex items-center gap-1 text-blue-500 hover:text-blue-700 font-medium text-sm"
+            >
+              {copied ? (
+                <>
+                  <Check size={16} />
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <Copy size={16} />
+                  Copy
+                </>
+              )}
+            </button>
           </div>
           
           <div className="p-6">
-            <div className="prose prose-blue max-w-none">
+            <div className="prose max-w-none">
               {summary.split('\n').map((paragraph, index) => (
-                <p key={index} className="mb-4 last:mb-0">{paragraph}</p>
+                <p key={index} className="mb-4 last:mb-0 text-gray-700">
+                  {paragraph || <br />}
+                </p>
               ))}
-            </div>
-            
-            <div className="mt-8 pt-6 border-t border-gray-100 flex justify-end">
-              <button 
-                className="flex items-center text-blue-500 hover:text-blue-700 font-medium"
-                onClick={() => {
-                  navigator.clipboard.writeText(summary);
-                  alert('Summary copied to clipboard!');
-                }}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                </svg>
-                Copy Summary
-              </button>
             </div>
           </div>
         </div>
       )}
-
-      {/* Info Section */}
-      <div className="mt-10 bg-blue-50 rounded-xl p-6 border border-blue-100">
-        <h3 className="text-lg font-semibold text-blue-800 mb-3">How to use PDF Summary</h3>
-        <ul className="list-disc pl-5 space-y-2 text-blue-700">
-          <li>Upload any PDF document (research papers, textbooks, articles)</li>
-          <li>Our AI will analyze and extract key information</li>
-          <li>Receive a concise summary of the main points</li>
-          <li>Copy the summary for your notes or reference</li>
-        </ul>
-      </div>
     </div>
   );
 };
