@@ -28,7 +28,7 @@ app.use((req, res, next) => {
 // Dynamic CORS based on environment
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://your-netlify-url.netlify.app', 'https://studybuddy-frontend.onrender.com'] 
+    ? ['https://studybuddy-lily-555118.netlify.app']  // ONLY YOUR NETLIFY URL HERE
     : 'http://localhost:5173',
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
