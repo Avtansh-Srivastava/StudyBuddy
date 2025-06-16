@@ -14,9 +14,6 @@ const PDFSummaryPage = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    console.log('Selected file:', file.name, (file.size / 1024).toFixed(2) + 'KB');
-
-    // Enhanced validation
     if (!file.name.endsWith('.pdf')) {
       setError('Only PDF files are allowed');
       toast.error('Please upload a PDF file');
@@ -38,24 +35,21 @@ const PDFSummaryPage = () => {
     formData.append('pdf', file);
 
     try {
-      console.log('Uploading file to server...');
-      const response = await fetch('http://localhost:3000/api/pdf/upload', {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/pdf/upload`, {
         method: 'POST',
         body: formData,
       });
 
-      const data = await response.json();
-      
       if (!response.ok) {
-        throw new Error(data.error || `Server error: ${response.status}`);
+        const errorData = await response.json();
+        throw new Error(errorData.message || `Upload failed with status ${response.status}`);
       }
 
-      console.log('Received summary:', data.summary.length, 'characters');
+      const data = await response.json();
       setSummary(data.summary);
       toast.success(`Summary generated for ${file.name}`);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to generate summary';
-      console.error('Upload error:', errorMessage);
       setError(errorMessage);
       toast.error(errorMessage);
     } finally {
@@ -89,7 +83,6 @@ const PDFSummaryPage = () => {
         </p>
       </div>
 
-      {/* Upload Section */}
       <div 
         className={`border-2 border-dashed rounded-xl p-6 md:p-8 text-center mb-6 transition-all
           ${isLoading 
@@ -103,7 +96,7 @@ const PDFSummaryPage = () => {
         <input
           type="file"
           ref={fileInputRef}
-          name="pdf"  // Important for multer
+          name="pdf"
           accept=".pdf,application/pdf"
           onChange={handleUpload}
           className="hidden"
@@ -128,7 +121,6 @@ const PDFSummaryPage = () => {
         </div>
       </div>
 
-      {/* Results Section */}
       {summary && (
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-8">
           <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">

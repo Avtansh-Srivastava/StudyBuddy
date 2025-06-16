@@ -8,48 +8,31 @@ import { toast } from 'react-hot-toast';
 const StudyAssistantPage: React.FC = () => {
   const [question, setQuestion] = useState('');
   const [flashcardCreated, setFlashcardCreated] = useState(false);
-  const { isLoading, response, error, askQuestion } = useAI();
-  const { addFlashcard } = useFlashcards();
+  const { response, isLoading, error, askQuestion } = useAI();
+  const { addFlashcard, isLoading: isFlashcardLoading } = useFlashcards();
   const responseRef = useRef<HTMLDivElement>(null);
-  
-  // Reset flashcard state when question changes
+
   useEffect(() => {
     setFlashcardCreated(false);
   }, [question]);
 
   const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!question.trim() || isLoading) return;
-  
-  try {
-    console.log("=== STUDY ASSISTANT DEBUG ===");
-    console.log("Question:", question);
-    console.log("Using backend URL:", import.meta.env.VITE_BACKEND_URL);
-    console.log("Full API endpoint:", `${import.meta.env.VITE_BACKEND_URL}/api/ask`);
+    e.preventDefault();
+    if (!question.trim() || isLoading) return;
     
-    await askQuestion(question);
-    setQuestion('');
-    setFlashcardCreated(false);
-    
-    setTimeout(() => {
-      responseRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, 100);
-  } catch (err) {
-    console.error("API Error Details:", err);
-    
-    // Type-safe error handling
-    if (err instanceof Error) {
-      console.error("Error message:", err.message);
-      console.error("Error stack:", err.stack);
-    } else if (typeof err === 'object' && err !== null) {
-      console.error("Error keys:", Object.keys(err));
-    } else {
-      console.error("Error type:", typeof err);
+    try {
+      await askQuestion(question);
+      setQuestion('');
+      setFlashcardCreated(false);
+      
+      setTimeout(() => {
+        responseRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    } catch (err) {
+      toast.error('Failed to get response from AI');
     }
-    
-    toast.error('Failed to get response from AI');
-  }
-};
+  };
+  
   const handleCreateFlashcard = async () => {
     if (!response) return;
     
@@ -58,7 +41,6 @@ const StudyAssistantPage: React.FC = () => {
       setFlashcardCreated(true);
       toast.success('Flashcard created! View in Flashcards section');
     } catch (err) {
-      console.error("Flashcard Error:", err);
       toast.error('Failed to create flashcard');
     }
   };
@@ -100,11 +82,7 @@ const StudyAssistantPage: React.FC = () => {
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="w-6 h-6 mx-2 stroke-current">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path>
                 </svg>
-                <label>
-                  {error.includes('404') 
-                    ? "API endpoint not found - please check backend" 
-                    : error}
-                </label>
+                <label>{error}</label>
               </div>
             </div>
           )}
@@ -124,9 +102,11 @@ const StudyAssistantPage: React.FC = () => {
                         ? 'btn-success' 
                         : 'btn-outline btn-primary'
                     }`}
-                    disabled={flashcardCreated}
+                    disabled={flashcardCreated || isFlashcardLoading}
                   >
-                    {flashcardCreated ? (
+                    {isFlashcardLoading ? (
+                      <Loader2 className="animate-spin" size={16} />
+                    ) : flashcardCreated ? (
                       <>
                         <Check size={16} className="mr-1" />
                         Saved!

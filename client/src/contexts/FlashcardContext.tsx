@@ -1,4 +1,3 @@
-// client/src/contexts/FlashcardContext.tsx
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
 
@@ -6,71 +5,138 @@ interface Flashcard {
   id: string;
   question: string;
   answer: string;
-  createdAt: Date;
+  createdAt: string; // Changed to string for API compatibility
 }
 
 interface FlashcardContextType {
   flashcards: Flashcard[];
-  addFlashcard: (question: string, answer: string) => void;
-  updateFlashcard: (id: string, question: string, answer: string) => void;
-  deleteFlashcard: (id: string) => void;
+  isLoading: boolean;
+  error: string | null;
+  addFlashcard: (question: string, answer: string) => Promise<void>;
+  updateFlashcard: (id: string, question: string, answer: string) => Promise<void>;
+  deleteFlashcard: (id: string) => Promise<void>;
+  fetchFlashcards: () => Promise<void>;
 }
 
 const FlashcardContext = createContext<FlashcardContextType | undefined>(undefined);
 
 export const FlashcardProvider = ({ children }: { children: React.ReactNode }) => {
-  const [flashcards, setFlashcards] = useState<Flashcard[]>(() => {
-    // Load from localStorage on initial render
-    const saved = localStorage.getItem('flashcards');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        // Convert string dates back to Date objects
-        return parsed.map((card: any) => ({
-          ...card,
-          createdAt: new Date(card.createdAt)
-        }));
-      } catch (error) {
-        console.error('Failed to parse flashcards', error);
-        return [];
+  const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchFlashcards = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/flashcards`);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch flashcards: ${response.status}`);
       }
+
+      const data = await response.json();
+      setFlashcards(data);
+    } catch (err) {
+      console.error('Flashcard fetch error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load flashcards');
+    } finally {
+      setIsLoading(false);
     }
-    return [];
-  });
+  };
 
-  // Save to localStorage whenever flashcards change
   useEffect(() => {
-    localStorage.setItem('flashcards', JSON.stringify(flashcards));
-  }, [flashcards]);
+    fetchFlashcards();
+  }, []);
 
-  const addFlashcard = (question: string, answer: string) => {
-    const newFlashcard: Flashcard = {
-      id: Date.now().toString(),
-      question,
-      answer,
-      createdAt: new Date()
-    };
-    setFlashcards(prev => [...prev, newFlashcard]);
-    toast.success('Flashcard created!');
+  const addFlashcard = async (question: string, answer: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/flashcards`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, answer }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to add flashcard: ${response.status}`);
+      }
+
+      const newFlashcard = await response.json();
+      setFlashcards(prev => [...prev, newFlashcard]);
+      toast.success('Flashcard created!');
+    } catch (err) {
+      console.error('Add flashcard error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to add flashcard');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const updateFlashcard = (id: string, question: string, answer: string) => {
-    setFlashcards(prev =>
-      prev.map(card =>
-        card.id === id ? { ...card, question, answer } : card
-      )
-    );
-    toast.success('Flashcard updated!');
+  const updateFlashcard = async (id: string, question: string, answer: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/flashcards/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, answer }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to update flashcard: ${response.status}`);
+      }
+
+      const updatedFlashcard = await response.json();
+      setFlashcards(prev =>
+        prev.map(card => card.id === id ? updatedFlashcard : card)
+      );
+      toast.success('Flashcard updated!');
+    } catch (err) {
+      console.error('Update flashcard error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update flashcard');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const deleteFlashcard = (id: string) => {
-    setFlashcards(prev => prev.filter(card => card.id !== id));
-    toast.success('Flashcard deleted!');
+  const deleteFlashcard = async (id: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/flashcards/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to delete flashcard: ${response.status}`);
+      }
+
+      setFlashcards(prev => prev.filter(card => card.id !== id));
+      toast.success('Flashcard deleted!');
+    } catch (err) {
+      console.error('Delete flashcard error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete flashcard');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <FlashcardContext.Provider 
-      value={{ flashcards, addFlashcard, updateFlashcard, deleteFlashcard }}
+      value={{ 
+        flashcards, 
+        isLoading, 
+        error,
+        addFlashcard, 
+        updateFlashcard, 
+        deleteFlashcard,
+        fetchFlashcards
+      }}
     >
       {children}
     </FlashcardContext.Provider>
