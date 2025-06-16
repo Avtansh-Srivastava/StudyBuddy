@@ -1,3 +1,6 @@
+// Add this at the VERY TOP - it will run first
+console.log("BACKEND URL CONFIRMED:", import.meta.env.VITE_BACKEND_URL);
+
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
