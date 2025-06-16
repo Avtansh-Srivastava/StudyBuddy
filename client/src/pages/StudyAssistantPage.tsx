@@ -18,24 +18,38 @@ const StudyAssistantPage: React.FC = () => {
   }, [question]);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!question.trim() || isLoading) return;
-    
-    try {
-      await askQuestion(question);
-      setQuestion('');
-      setFlashcardCreated(false);
-      
-      // Scroll to response
-      setTimeout(() => {
-        responseRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
-    } catch (err) {
-      console.error("API Error:", err);
-      toast.error('Failed to get response from AI');
-    }
-  };
+  e.preventDefault();
+  if (!question.trim() || isLoading) return;
   
+  try {
+    console.log("=== STUDY ASSISTANT DEBUG ===");
+    console.log("Question:", question);
+    console.log("Using backend URL:", import.meta.env.VITE_BACKEND_URL);
+    console.log("Full API endpoint:", `${import.meta.env.VITE_BACKEND_URL}/api/ask`);
+    
+    await askQuestion(question);
+    setQuestion('');
+    setFlashcardCreated(false);
+    
+    setTimeout(() => {
+      responseRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+  } catch (err) {
+    console.error("API Error Details:", err);
+    
+    // Type-safe error handling
+    if (err instanceof Error) {
+      console.error("Error message:", err.message);
+      console.error("Error stack:", err.stack);
+    } else if (typeof err === 'object' && err !== null) {
+      console.error("Error keys:", Object.keys(err));
+    } else {
+      console.error("Error type:", typeof err);
+    }
+    
+    toast.error('Failed to get response from AI');
+  }
+};
   const handleCreateFlashcard = async () => {
     if (!response) return;
     
