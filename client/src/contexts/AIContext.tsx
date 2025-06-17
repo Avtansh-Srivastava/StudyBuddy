@@ -1,10 +1,15 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 
+// Define the backend URL
+const BACKEND_URL = import.meta.env.VITE_API_URL;
+console.log('BACKEND URL CONFIRMED:', BACKEND_URL); // Debug to confirm URL
+
 interface AIContextType {
   response: string;
   isLoading: boolean;
   error: string | null;
   askQuestion: (question: string) => Promise<void>;
+  clearConversation: () => void;
 }
 
 const AIContext = createContext<AIContextType | undefined>(undefined);
@@ -20,32 +25,60 @@ export const AIProvider = ({ children }: { children: ReactNode }) => {
     setResponse('');
     
     try {
-      console.log('[AIContext] Calling backend:', `${import.meta.env.VITE_BACKEND_URL}/api/ask`);
+      console.log('[AIContext] Calling backend:', `${BACKEND_URL}/api/ask`);
       
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/ask`, {
+      const response = await fetch(`${BACKEND_URL}/api/ask`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ question }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || `Request failed with status ${response.status}`);
+        throw new Error(
+          errorData.error || 
+          errorData.message || 
+          `Request failed with status ${response.status}`
+        );
       }
 
       const data = await response.json();
+      
+      if (!data.response) {
+        throw new Error('Received empty response from AI');
+      }
+      
       setResponse(data.response);
+      return data.response;
     } catch (err) {
       console.error('[AIContext] API Error:', err);
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
-      throw err; // Re-throw to allow component-level handling
+      const errorMessage = err instanceof Error ? 
+        err.message : 
+        'Failed to get response from AI';
+      
+      setError(errorMessage);
+      setResponse(`Error: ${errorMessage}`);
+      throw errorMessage; // Re-throw to allow component-level handling
     } finally {
       setIsLoading(false);
     }
   };
 
+  const clearConversation = () => {
+    setResponse('');
+    setError(null);
+  };
+
   return (
-    <AIContext.Provider value={{ response, isLoading, error, askQuestion }}>
+    <AIContext.Provider value={{ 
+      response, 
+      isLoading, 
+      error, 
+      askQuestion,
+      clearConversation 
+    }}>
       {children}
     </AIContext.Provider>
   );
