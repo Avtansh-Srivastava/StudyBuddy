@@ -100,10 +100,50 @@ if (!DEEPINFRA_API_KEY) {
 const DEEPINFRA_MODEL = 'meta-llama/Meta-Llama-3-70B-Instruct';
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
-// [Rest of your existing code for file upload, PDF extraction, and AI functions...]
+// ======================
+// 8. FLASHCARD ENDPOINTS
+// ======================
+let flashcards = [];
+
+app.get('/api/flashcards', (req, res) => {
+  res.json(flashcards);
+});
+
+app.post('/api/flashcards', express.json(), (req, res) => {
+  const newCard = {
+    id: Date.now().toString(),
+    ...req.body,
+    createdAt: new Date().toISOString()
+  };
+  flashcards.push(newCard);
+  res.status(201).json(newCard);
+});
 
 // ======================
-// 7. START SERVER
+// 9. TEST ROUTES (REQUIRED)
+// ======================
+// Add these ABOVE existing routes
+app.get('/api/ask', (req, res) => {
+  res.json({ message: '/api/ask endpoint is live' });
+});
+
+app.get('/api/pdf/upload', (req, res) => {
+  res.json({ message: '/api/pdf/upload endpoint is live' });
+});
+
+// ======================
+// 10. UPDATE CORS
+// ======================
+app.use(cors({
+  origin: [
+    "https://studybuddy-lily-555118.netlify.app",
+    "http://localhost:5173"
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+}));
+
+// ======================
+// 8. START SERVER
 // ======================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
