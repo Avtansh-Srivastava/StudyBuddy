@@ -6,14 +6,14 @@ import ReactMarkdown from 'react-markdown';
 import { toast } from 'react-hot-toast';
 
 // Debug VITE_API_URL
-const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://studybuddy-backend-8smv.onrender.com';
-console.log('StudyAssistant BACKEND URL:', BACKEND_URL);
+const VITE_API_URL = import.meta.env.VITE_API_URL || 'https://studybuddy-backend-8smv.onrender.com';
+console.log('StudyAssistant BACKEND URL:', VITE_API_URL);
 console.log('StudyAssistant env vars:', import.meta.env);
 
 const StudyAssistant: React.FC = () => {
   const [question, setQuestion] = useState('');
   const [lastQuestion, setLastQuestion] = useState('');
-  const { isLoading, response, error, askQuestion } = useAI();
+  const { isLoading, error, response, askQuestion } = useAI();
   const { addFlashcard } = useFlashcards();
   const responseRef = useRef<HTMLDivElement>(null);
   
@@ -22,7 +22,11 @@ const StudyAssistant: React.FC = () => {
     if (!question.trim() || isLoading) return;
     
     setLastQuestion(question);
-    await askQuestion(question);
+    try {
+      await askQuestion(question);
+    } catch {
+      setLastQuestion('');
+    }
     setQuestion('');
     
     setTimeout(() => {
@@ -31,15 +35,15 @@ const StudyAssistant: React.FC = () => {
   };
   
   const handleCreateFlashcard = async () => {
-    if (!lastQuestion.trim() || !response.trim()) {
-      toast.error('No question or response available for flashcard');
+    if (!lastQuestion.trim() || !response?.trim() || response.startsWith('Error:') || !!error) {
+      toast.error('Cannot create flashcard: no valid response');
       return;
     }
-
+    
     console.log('[StudyAssistant] Creating flashcard:', { question: lastQuestion, answer: response });
     try {
       await addFlashcard(lastQuestion, response);
-      toast.success('Flashcard created! View it in Flashcards section.');
+      toast.success('Flashcard created successfully!');
     } catch (err) {
       console.error('[StudyAssistant] Flashcard error:', err);
       toast.error('Failed to create flashcard');
@@ -94,7 +98,7 @@ const StudyAssistant: React.FC = () => {
                   <button
                     onClick={handleCreateFlashcard}
                     className="btn btn-outline btn-primary btn-sm"
-                    disabled={!lastQuestion || !response || isLoading}
+                    disabled={!lastQuestion || !response || response.startsWith('Error:') || isLoading || !!error}
                   >
                     <Plus size={16} className="mr-1" />
                     Create Flashcard
