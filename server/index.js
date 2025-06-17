@@ -47,7 +47,33 @@ app.get('/health', (req, res) => {
 });
 
 // =====================================
-// 5. API ROUTES
+// 5. ROOT ENDPOINT FOR LOAD BALANCER
+// =====================================
+app.get('/', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>StudyBuddy Backend</title>
+      <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+        h1 { color: #333; }
+        .status { color: #4CAF50; font-weight: bold; }
+      </style>
+    </head>
+    <body>
+      <h1>StudyBuddy Backend Service</h1>
+      <p>Status: <span class="status">OPERATIONAL</span></p>
+      <p>Environment: ${process.env.NODE_ENV || 'development'}</p>
+      <p>Health Check: <a href="/health">/health</a></p>
+      <p>Render Health: <a href="/render-health">/render-health</a></p>
+    </body>
+    </html>
+  `);
+});
+
+// =====================================
+// 6. API ROUTES
 // =====================================
 // Flashcard endpoints
 let flashcards = [];
@@ -107,7 +133,7 @@ app.post('/api/pdf/upload', upload.single('file'), async (req, res) => {
 });
 
 // =====================================
-// 6. ERROR HANDLING
+// 7. ERROR HANDLING
 // =====================================
 app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
@@ -119,7 +145,7 @@ app.use((err, req, res, next) => {
 });
 
 // =====================================
-// 7. SERVER START (CRITICAL FOR RENDER)
+// 8. SERVER START (CRITICAL FOR RENDER)
 // =====================================
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0'; // REQUIRED for Render
