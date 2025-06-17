@@ -1,6 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
+const morgan = require('morgan'); // Added for debugging
 const axios = require('axios');
 const multer = require('multer');
 const pdf = require('pdf-parse');
@@ -9,7 +11,6 @@ const app = express();
 // ======================
 // 0. SECURITY MIDDLEWARE
 // ======================
-// Content Security Policy
 app.use((req, res, next) => {
   res.setHeader(
     "Content-Security-Policy",
@@ -23,65 +24,27 @@ app.use((req, res, next) => {
 });
 
 // ======================
-// 1. BASIC SETUP
+// 1. CORE MIDDLEWARE (FIXED ORDER)
 // ======================
-// Dynamic CORS based on environment
+// Single CORS configuration (removed duplicates)
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://studybuddy-lily-555118.netlify.app']  // ONLY YOUR NETLIFY URL HERE
+    ? ['https://studybuddy-lily-555118.netlify.app']
     : 'http://localhost:5173',
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
 };
 app.use(cors(corsOptions));
-app.options('*', cors());
 
 app.use(express.json({ limit: '10mb' }));
-
-// Request logging
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-  if (req.method === 'POST') {
-    console.log('Request body type:', req.headers['content-type']);
-  }
-  next();
-});
+app.use(morgan('dev')); // Request logging
 
 // ======================
-// 2. ROUTES
+// 2. API ROUTES (MUST COME FIRST)
 // ======================
-// Root route
-app.get('/', (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>StudyBuddy API</title>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; }
-          .container { max-width: 800px; margin: 0 auto; }
-          code { background: #f4f4f4; padding: 2px 5px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <h1>StudyBuddy API Service</h1>
-          <p>This is the backend service for StudyBuddy application.</p>
-          <h2>Available Endpoints:</h2>
-          <ul>
-            <li><code>POST /api/pdf/upload</code> - PDF summarization</li>
-            <li><code>POST /api/ask</code> - AI question answering</li>
-          </ul>
-          <p>Status: <strong>🟢 Operational</strong></p>
-        </div>
-      </body>
-    </html>
-  `);
-});
-
 // Health check
-app.get('/health', (req, res) => {
+app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -89,27 +52,14 @@ app.get('/health', (req, res) => {
   });
 });
 
-// [Keep all your existing code for PDF upload and AI endpoints...]
-// ======================
-// 3. CONFIGURATION
-// ======================
-const DEEPINFRA_API_KEY = process.env.DEEPINFRA_API_KEY;
-if (!DEEPINFRA_API_KEY) {
-  console.error("❌ CRITICAL: DEEPINFRA_API_KEY is missing from .env file!");
-}
-const DEEPINFRA_MODEL = 'meta-llama/Meta-Llama-3-70B-Instruct';
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-
-// ======================
-// 8. FLASHCARD ENDPOINTS
-// ======================
+// Flashcard endpoints
 let flashcards = [];
 
 app.get('/api/flashcards', (req, res) => {
   res.json(flashcards);
 });
 
-app.post('/api/flashcards', express.json(), (req, res) => {
+app.post('/api/flashcards', (req, res) => {
   const newCard = {
     id: Date.now().toString(),
     ...req.body,
@@ -120,41 +70,90 @@ app.post('/api/flashcards', express.json(), (req, res) => {
 });
 
 // ======================
-// 9. TEST ROUTES (REQUIRED)
+// 3. PDF & AI ENDPOINTS (ADD YOUR IMPLEMENTATIONS HERE)
 // ======================
-// Add these ABOVE existing routes
-app.get('/api/ask', (req, res) => {
-  res.json({ message: '/api/ask endpoint is live' });
+// TODO: Add your actual POST implementations for these
+app.post('/api/ask', (req, res) => {
+  // Your AI question answering implementation
+  res.json({ message: 'AI response would be here' });
 });
 
-app.get('/api/pdf/upload', (req, res) => {
-  res.json({ message: '/api/pdf/upload endpoint is live' });
+const upload = multer({ storage: multer.memoryStorage() });
+app.post('/api/pdf/upload', upload.single('file'), (req, res) => {
+  // Your PDF processing implementation
+  res.json({ message: 'PDF processing would happen here' });
 });
 
 // ======================
-// 10. UPDATE CORS
+// 4. DEBUG ENDPOINTS
 // ======================
-app.use(cors({
-  origin: [
-    "https://studybuddy-lily-555118.netlify.app",
-    "http://localhost:5173"
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
-}));
+app.get('/api/test-endpoints', (req, res) => {
+  res.json({
+    flashcards: 'GET/POST /api/flashcards',
+    ask: 'POST /api/ask',
+    pdf: 'POST /api/pdf/upload'
+  });
+});
 
 // ======================
-// 8. START SERVER
+// 5. STATIC & FALLBACK (PRODUCTION ONLY)
 // ======================
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, 'dist')));
+  
+  // Fallback handler (MUST be last)
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  });
+} else {
+  // Dev-only root route
+  app.get('/', (req, res) => {
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+        <head><title>StudyBuddy API</title></head>
+        <body>
+          <h1>StudyBuddy API Dev Mode</h1>
+          <p>Endpoints are active. Use Postman for testing.</p>
+        </body>
+      </html>
+    `);
+  });
+}
+
+// ======================
+// 6. ERROR HANDLING (MUST BE LAST MIDDLEWARE)
+// ======================
+// 404 Handler for API routes
+app.use('/api/*', (req, res) => {
+  res.status(404).json({ error: 'API endpoint not found' });
+});
+
+// Generic error handler
+app.use((err, req, res, next) => {
+  console.error(`[ERROR] ${err.stack}`);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+// ======================
+// 7. CONFIGURATION & STARTUP
+// ======================
+const DEEPINFRA_API_KEY = process.env.DEEPINFRA_API_KEY;
+if (!DEEPINFRA_API_KEY) {
+  console.error("❌ CRITICAL: DEEPINFRA_API_KEY is missing!");
+}
+const DEEPINFRA_MODEL = 'meta-llama/Meta-Llama-3-70B-Instruct';
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`
   ==========================================
    StudyBuddy Backend Service
   ==========================================
-  Server running on: http://localhost:${PORT}
-  AI Service: ${DEEPINFRA_API_KEY ? '✅ Enabled' : '❌ Disabled'}
-  Max PDF Size: ${MAX_FILE_SIZE / (1024 * 1024)}MB
+  Server running on port: ${PORT}
   Environment: ${process.env.NODE_ENV || 'development'}
+  CORS Allowed: ${corsOptions.origin}
+  Debug Mode: ${morgan ? '✅ Enabled' : '❌ Disabled'}
   ==========================================
   `);
 });
