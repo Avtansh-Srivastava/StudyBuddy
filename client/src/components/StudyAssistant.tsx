@@ -3,9 +3,16 @@ import { Send, Loader2, Plus } from 'lucide-react';
 import { useAI } from '../contexts/AIContext';
 import { useFlashcards } from '../contexts/FlashcardContext';
 import ReactMarkdown from 'react-markdown';
+import { toast } from 'react-hot-toast';
+
+// Debug VITE_API_URL
+const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://studybuddy-backend-8smv.onrender.com';
+console.log('StudyAssistant BACKEND URL:', BACKEND_URL);
+console.log('StudyAssistant env vars:', import.meta.env);
 
 const StudyAssistant: React.FC = () => {
   const [question, setQuestion] = useState('');
+  const [lastQuestion, setLastQuestion] = useState('');
   const { isLoading, response, error, askQuestion } = useAI();
   const { addFlashcard } = useFlashcards();
   const responseRef = useRef<HTMLDivElement>(null);
@@ -14,18 +21,29 @@ const StudyAssistant: React.FC = () => {
     e.preventDefault();
     if (!question.trim() || isLoading) return;
     
+    setLastQuestion(question);
     await askQuestion(question);
     setQuestion('');
     
-    // Scroll to response after a short delay to allow rendering
     setTimeout(() => {
       responseRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, 100);
   };
   
-  const handleCreateFlashcard = () => {
-    addFlashcard(question, response);
-    alert('Flashcard created! You can view it in the Flashcards section.');
+  const handleCreateFlashcard = async () => {
+    if (!lastQuestion.trim() || !response.trim()) {
+      toast.error('No question or response available for flashcard');
+      return;
+    }
+
+    console.log('[StudyAssistant] Creating flashcard:', { question: lastQuestion, answer: response });
+    try {
+      await addFlashcard(lastQuestion, response);
+      toast.success('Flashcard created! View it in Flashcards section.');
+    } catch (err) {
+      console.error('[StudyAssistant] Flashcard error:', err);
+      toast.error('Failed to create flashcard');
+    }
   };
   
   return (
@@ -76,6 +94,7 @@ const StudyAssistant: React.FC = () => {
                   <button
                     onClick={handleCreateFlashcard}
                     className="btn btn-outline btn-primary btn-sm"
+                    disabled={!lastQuestion || !response || isLoading}
                   >
                     <Plus size={16} className="mr-1" />
                     Create Flashcard

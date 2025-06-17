@@ -3,7 +3,8 @@ import { toast } from 'react-hot-toast';
 
 // Define the backend URL
 const BACKEND_URL = import.meta.env.VITE_API_URL;
-console.log('BACKEND URL CONFIRMED:', BACKEND_URL); // Debug to confirm URL
+console.log('BACKEND URL CONFIRMED:', BACKEND_URL);
+console.log('All env vars:', import.meta.env);
 
 interface Flashcard {
   id: string;
@@ -33,7 +34,6 @@ export const FlashcardProvider = ({ children }: { children: React.ReactNode }) =
     setIsLoading(true);
     setError(null);
     try {
-      // Test backend connection
       console.log('=== BACKEND CONNECTION TEST ===');
       const healthResponse = await fetch(`${BACKEND_URL}/health`);
       if (!healthResponse.ok) {
@@ -42,7 +42,7 @@ export const FlashcardProvider = ({ children }: { children: React.ReactNode }) =
       const healthData = await healthResponse.json();
       console.log('Health check:', healthData);
 
-      // Fetch flashcards
+      console.log('[FlashcardContext] Fetching flashcards:', `${BACKEND_URL}/api/flashcards`);
       const response = await fetch(`${BACKEND_URL}/api/flashcards`);
       if (!response.ok) {
         throw new Error(`Failed to fetch flashcards: ${response.status}`);
@@ -66,6 +66,11 @@ export const FlashcardProvider = ({ children }: { children: React.ReactNode }) =
     setIsLoading(true);
     setError(null);
     try {
+      console.log('[FlashcardContext] Adding flashcard:', { question, answer });
+      if (!question || !answer) {
+        throw new Error('Question and answer are required');
+      }
+
       const response = await fetch(`${BACKEND_URL}/api/flashcards`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -73,7 +78,8 @@ export const FlashcardProvider = ({ children }: { children: React.ReactNode }) =
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to add flashcard: ${response.status}`);
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to add flashcard: ${response.status}`);
       }
 
       const newFlashcard = await response.json();
@@ -82,6 +88,7 @@ export const FlashcardProvider = ({ children }: { children: React.ReactNode }) =
     } catch (err) {
       console.error('Add flashcard error:', err);
       setError(err instanceof Error ? err.message : 'Failed to add flashcard');
+      toast.error('Can\'t create flashcard');
       throw err;
     } finally {
       setIsLoading(false);
@@ -92,6 +99,7 @@ export const FlashcardProvider = ({ children }: { children: React.ReactNode }) =
     setIsLoading(true);
     setError(null);
     try {
+      console.log('[FlashcardContext] Updating flashcard:', { id, question, answer });
       const response = await fetch(`${BACKEND_URL}/api/flashcards/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -120,6 +128,7 @@ export const FlashcardProvider = ({ children }: { children: React.ReactNode }) =
     setIsLoading(true);
     setError(null);
     try {
+      console.log('[FlashcardContext] Deleting flashcard:', id);
       const response = await fetch(`${BACKEND_URL}/api/flashcards/${id}`, {
         method: 'DELETE',
       });

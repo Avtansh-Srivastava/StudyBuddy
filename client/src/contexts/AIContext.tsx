@@ -2,7 +2,8 @@ import React, { createContext, useContext, useState, ReactNode } from 'react';
 
 // Define the backend URL
 const BACKEND_URL = import.meta.env.VITE_API_URL;
-console.log('BACKEND URL CONFIRMED:', BACKEND_URL); // Debug to confirm URL
+console.log('BACKEND URL CONFIRMED:', BACKEND_URL);
+console.log('All env vars:', import.meta.env);
 
 interface AIContextType {
   response: string;
@@ -25,7 +26,7 @@ export const AIProvider = ({ children }: { children: ReactNode }) => {
     setResponse('');
     
     try {
-      console.log('[AIContext] Calling backend:', `${BACKEND_URL}/api/ask`);
+      console.log('[AIContext] Calling backend:', `${BACKEND_URL}/api/ask`, { question });
       
       const response = await fetch(`${BACKEND_URL}/api/ask`, {
         method: 'POST',
@@ -60,7 +61,7 @@ export const AIProvider = ({ children }: { children: ReactNode }) => {
       
       setError(errorMessage);
       setResponse(`Error: ${errorMessage}`);
-      throw errorMessage; // Re-throw to allow component-level handling
+      throw errorMessage;
     } finally {
       setIsLoading(false);
     }
