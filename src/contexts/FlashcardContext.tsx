@@ -1,123 +1,137 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { toast } from 'react-hot-toast';
 
+// Define and export Flashcard interface
 export interface Flashcard {
   id: string;
   question: string;
   answer: string;
-  createdAt: number;
-  lastReviewed?: number;
+  createdAt: string;
 }
 
 interface FlashcardContextType {
   flashcards: Flashcard[];
-  addFlashcard: (question: string, answer: string) => void;
-  deleteFlashcard: (id: string) => void;
-  clearAllFlashcards: () => void;
-  exportFlashcards: () => string;
-  importFlashcards: (jsonData: string) => boolean;
-  updateLastReviewed: (id: string) => void;
+  addFlashcard: (question: string, answer: string) => Promise<void>;
+  updateFlashcard: (id: string, question: string, answer: string) => Promise<void>;
+  deleteFlashcard: (id: string) => Promise<void>;
+  error: string | null;
+  isLoading: boolean;
 }
 
 const FlashcardContext = createContext<FlashcardContextType | undefined>(undefined);
 
 export const FlashcardProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  // Load flashcards from localStorage on mount
+  // Hardcode backend URL to avoid undefined issues
+  const VITE_API_URL = 'https://studybuddy-backend-8smv.onrender.com';
+
+  console.log('[FlashcardContext] VITE_API_URL:', VITE_API_URL);
+
   useEffect(() => {
-    const savedFlashcards = localStorage.getItem('flashcards');
-    if (savedFlashcards) {
+    const fetchFlashcards = async () => {
+      setIsLoading(true);
       try {
-        setFlashcards(JSON.parse(savedFlashcards));
-      } catch (e) {
-        console.error('Failed to parse flashcards from localStorage', e);
+        console.log('[FlashcardContext] Fetching flashcards:', `${VITE_API_URL}/api/flashcards`);
+        const response = await fetch(`${VITE_API_URL}/api/flashcards`);
+        const text = await response.text();
+        console.log('[FlashcardContext] Raw response:', text);
+        if (!response.ok) throw new Error(`Failed to fetch flashcards: ${response.status}`);
+        const data = JSON.parse(text);
+        setFlashcards(data);
+      } catch (err: any) {
+        console.error('[FlashcardContext] Fetch error:', err.message);
+        setError(err.message || 'Failed to load flashcards');
+        toast.error('Failed to load flashcards');
+      } finally {
+        setIsLoading(false);
       }
-    }
+    };
+    fetchFlashcards();
   }, []);
 
-  // Save flashcards to localStorage whenever they change
-  useEffect(() => {
-    localStorage.setItem('flashcards', JSON.stringify(flashcards));
-  }, [flashcards]);
-
-  const addFlashcard = (question: string, answer: string) => {
-    const newFlashcard: Flashcard = {
-      id: Date.now().toString(),
-      question,
-      answer,
-      createdAt: Date.now(),
-    };
-    setFlashcards(prev => [...prev, newFlashcard]);
-  };
-
-  const deleteFlashcard = (id: string) => {
-    setFlashcards(prev => prev.filter(card => card.id !== id));
-  };
-
-  const clearAllFlashcards = () => {
-    if (window.confirm('Are you sure you want to delete all flashcards? This cannot be undone.')) {
-      setFlashcards([]);
-    }
-  };
-
-  const exportFlashcards = (): string => {
-    return JSON.stringify(flashcards, null, 2);
-  };
-
-  const importFlashcards = (jsonData: string): boolean => {
+  const addFlashcard = async (question: string, answer: string) => {
+    setIsLoading(true);
     try {
-      const parsed = JSON.parse(jsonData);
-      if (Array.isArray(parsed) && parsed.every(isValidFlashcard)) {
-        setFlashcards(parsed);
-        return true;
-      }
-      return false;
-    } catch (e) {
-      console.error('Failed to import flashcards', e);
-      return false;
+      console.log('[FlashcardContext] Adding flashcard:', { question, answer });
+      const response = await fetch(`${VITE_API_URL}/api/flashcards`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, answer }),
+      });
+      const text = await response.text();
+      console.log('[FlashcardContext] Add response:', text);
+      if (!response.ok) throw new Error(`Failed to add flashcard: ${response.status}`);
+      const data = JSON.parse(text);
+      setFlashcards([...flashcards, data]);
+      toast.success('Flashcard created successfully!');
+    } catch (err: any) {
+      console.error('[FlashcardContext] Add error:', err.message);
+      setError(err.message || 'Failed to add flashcard');
+      toast.error('Failed to add flashcard');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const updateLastReviewed = (id: string) => {
-    setFlashcards(prev => 
-      prev.map(card => 
-        card.id === id ? { ...card, lastReviewed: Date.now() } : card
-      )
-    );
+  const updateFlashcard = async (id: string, question: string, answer: string) => {
+    setIsLoading(true);
+    try {
+      console.log('[FlashcardContext] Updating flashcard:', { id, question, answer });
+      const response = await fetch(`${VITE_API_URL}/api/flashcards/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, answer }),
+      });
+      const text = await response.text();
+      console.log('[FlashcardContext] Update response:', text);
+      if (!response.ok) throw new Error(`Failed to update flashcard: ${response.status}`);
+      const data = JSON.parse(text);
+      setFlashcards(flashcards.map((card) => (card.id === id ? data : card)));
+      toast.success('Flashcard updated successfully!');
+    } catch (err: any) {
+      console.error('[FlashcardContext] Update error:', err.message);
+      setError(err.message || 'Failed to update flashcard');
+      toast.error('Failed to update flashcard');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteFlashcard = async (id: string) => {
+    setIsLoading(true);
+    try {
+      console.log('[FlashcardContext] Deleting flashcard:', id);
+      const response = await fetch(`${VITE_API_URL}/api/flashcards/${id}`, {
+        method: 'DELETE',
+      });
+      const text = await response.text();
+      console.log('[FlashcardContext] Delete response:', text);
+      if (!response.ok) throw new Error(`Failed to delete flashcard: ${response.status}`);
+      setFlashcards(flashcards.filter((card) => (card.id !== id)));
+      toast.success('Flashcard deleted successfully!');
+    } catch (err: any) {
+      console.error('[FlashcardContext] Delete error:', err.message);
+      setError(err.message || 'Failed to delete flashcard');
+      toast.error('Failed to delete flashcard');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
-    <FlashcardContext.Provider value={{
-      flashcards,
-      addFlashcard,
-      deleteFlashcard,
-      clearAllFlashcards,
-      exportFlashcards,
-      importFlashcards,
-      updateLastReviewed
-    }}>
+    <FlashcardContext.Provider value={{ flashcards, addFlashcard, updateFlashcard, deleteFlashcard, error, isLoading }}>
       {children}
     </FlashcardContext.Provider>
   );
 };
 
-export const useFlashcards = (): FlashcardContextType => {
+export const useFlashcards = () => {
   const context = useContext(FlashcardContext);
-  if (context === undefined) {
-    throw new Error('useFlashcards must be used within a FlashcardProvider');
+  if (!context) {
+    throw new Error('useFlashcards must be used within FlashcardProvider');
   }
   return context;
 };
-
-// Helper function to validate flashcard objects
-function isValidFlashcard(card: any): card is Flashcard {
-  return (
-    typeof card === 'object' &&
-    card !== null &&
-    typeof card.id === 'string' &&
-    typeof card.question === 'string' &&
-    typeof card.answer === 'string' &&
-    typeof card.createdAt === 'number' &&
-    (card.lastReviewed === undefined || typeof card.lastReviewed === 'number')
-  );
-}
