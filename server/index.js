@@ -7,18 +7,18 @@ const pdf = require('pdf-parse');
 const axios = require('axios');
 const app = express();
 
-// =====================================
-// 1. CRITICAL RENDER.COM HEALTH CHECK
-// =====================================
-// MUST BE THE VERY FIRST ROUTE
+console.log('Starting StudyBuddy Backend...');
+
+if (!process.env.DEEPINFRA_API_KEY) {
+  console.error('ERROR: DEEPINFRA_API_KEY is not set');
+  process.exit(1);
+}
+
 app.get('/render-health', (req, res) => {
   console.log('✅ Render health check passed');
   res.send('OK');
 });
 
-// =====================================
-// 2. CORS CONFIGURATION
-// =====================================
 const allowedOrigins = [
   'https://studybuddy-frontend-kote.onrender.com',
   'http://localhost:5173'
@@ -36,21 +36,14 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// =====================================
-// 3. BASIC MIDDLEWARE
-// =====================================
 app.use(express.json({ limit: '10mb' }));
 app.use(morgan('dev'));
 
-// Multer for file uploads
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+  limits: { fileSize: 500 * 1024 } // 500KB
 });
 
-// =====================================
-// 4. HEALTH ENDPOINTS
-// =====================================
 app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
@@ -59,9 +52,6 @@ app.get('/health', (req, res) => {
   });
 });
 
-// =====================================
-// 5. ROOT ENDPOINT FOR LOAD BALANCER
-// =====================================
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -71,12 +61,12 @@ app.get('/', (req, res) => {
       <style>
         body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
         h1 { color: #333; }
-        .status { color: #4CAF50; font-weight: bold; }
+        .status { color: #4CAF50; font-weight: normal; }
       </style>
     </head>
     <body>
       <h1>StudyBuddy Backend Service</h1>
-      <p>Status: <span class="status">OPERATIONAL</span></p>
+      <p>Status: <span class="status">Operational</span></p>
       <p>Environment: ${process.env.NODE_ENV || 'development'}</p>
       <p>Health Check: <a href="/health">/health</a></p>
       <p>Render Health: <a href="/render-health">/render-health</a></p>
@@ -85,10 +75,6 @@ app.get('/', (req, res) => {
   `);
 });
 
-// =====================================
-// 6. API ROUTES
-// =====================================
-// Flashcard endpoints
 let flashcards = [];
 
 app.get('/api/flashcards', (req, res) => {
@@ -97,6 +83,7 @@ app.get('/api/flashcards', (req, res) => {
 
 app.post('/api/flashcards', (req, res) => {
   const { question, answer } = req.body;
+  console.log('[Flashcards] Received:', { question, answer });
   if (!question || !answer) {
     return res.status(400).json({ error: 'Question and answer are required' });
   }
@@ -134,7 +121,6 @@ app.delete('/api/flashcards/:id', (req, res) => {
   res.json({ message: 'Flashcard deleted' });
 });
 
-// AI Endpoint
 app.post('/api/ask', async (req, res) => {
   try {
     const { question } = req.body;
@@ -142,91 +128,147 @@ app.post('/api/ask', async (req, res) => {
       return res.status(400).json({ error: 'Question is required' });
     }
 
-    // DeepInfra AI integration
+    console.log('[AI] Sending request to DeepInfra:', {
+      question: question,
+      apiKey: process.env.DEEPINFRA_API_KEY?.substring(0, 4) + '...'
+    });
+
     const aiResponse = await axios.post(
       'https://api.deepinfra.com/v1/openai/chat/completions',
       {
-        model: 'meta-llama/Meta-Llama-3-70B-Instruct',
+        model: 'mistralai/Mixtral-8x7B-Instruct-v0.1',
         messages: [
           { role: 'system', content: 'You are a helpful study assistant.' },
           { role: 'user', content: question }
         ],
-        max_tokens: 1024
+        max_tokens: 150
       },
       {
         headers: {
           'Authorization': `Bearer ${process.env.DEEPINFRA_API_KEY}`,
           'Content-Type': 'application/json'
-        }
+        },
+        timeout: 10000
       }
     );
 
-    const answer = aiResponse.data.choices[0].message.content;
-    res.json({ response: answer });
+    const answer = aiResponse.data.choices[0]?.message.content;
+    if (!answer) {
+      throw new Error('No content in DeepInfra response');
+    }
+    console.log('[AI] Success:', answer.substring(0, 100) + '...');
+    res.json({ success: true, response: answer });
   } catch (error) {
-    console.error('AI error:', error.response?.data || error.message);
+    console.error('[AI] Error:', {
+      message: error.message,
+      code: error.code,
+      response: error.response?.data,
+      status: error.response?.status
+    });
     res.status(500).json({
       error: 'AI processing failed',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      details: process.env.NODE_ENV === 'development' ? error.message : 'AI service error'
     });
   }
 });
 
-// PDF Processing with DeepInfra Summarization
 app.post('/api/pdf/upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    // Verify PDF file type
     if (req.file.mimetype !== 'application/pdf') {
+      console.error('[PDF] Invalid file type:', req.file.mimetype);
       return res.status(400).json({ error: 'Only PDF files are allowed' });
     }
 
-    // Extract text from PDF
-    const data = await pdf(req.file.buffer);
-    const pdfText = data.text;
-
-    // Summarize with DeepInfra
-    const summaryResponse = await axios.post(
-      'https://api.deepinfra.com/v1/openai/chat/completions',
-      {
-        model: 'meta-llama/Meta-Llama-3-70B-Instruct',
-        messages: [
-          { role: 'system', content: 'You are a helpful study assistant tasked with summarizing text.' },
-          { role: 'user', content: `Summarize the following text in 200 words or less:\n\n${pdfText.substring(0, 4000)}` }
-        ],
-        max_tokens: 300
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.DEEPINFRA_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    const summary = summaryResponse.data.choices[0].message.content;
-
-    res.json({
-      success: true,
-      summary,
-      pages: data.numpages,
-      textSample: pdfText.substring(0, 500) + '...'
+    console.log('[PDF] Processing PDF:', {
+      name: req.file.originalname,
+      sizeKB: req.file.size / 1024
     });
+
+    let data;
+    try {
+      data = await pdf(req.file.buffer, { max: 2 });
+    } catch (error) {
+      console.error('[PDF] Parse error:', error.message);
+      return res.status(400).json({ error: 'Invalid PDF file', details: error.message });
+    }
+
+    const pdfText = data.text;
+    if (!pdfText || pdfText.length < 10) {
+      console.log('[PDF] No meaningful text:', pdfText.length);
+      return res.status(400).json({
+        error: 'No meaningful text extracted from PDF',
+        pages: data.numpages
+      });
+    }
+
+    if (pdfText.length > 2000) {
+      console.log('[PDF] Text too large:', pdfText.length);
+      return res.status(400).json({
+        error: 'PDF too large for summarization (max 2KB text)',
+        pages: data.numpages
+      });
+    }
+
+    console.log('[PDF] Sending to DeepInfra:', pdfText.length, 'chars');
+    let summaryResponse;
+    try {
+      summaryResponse = await axios.post(
+        'https://api.deepinfra.com/v1/openai/chat/completions',
+        {
+          model: 'mistralai/Mixtral-8x7B-Instruct-v0.1',
+          messages: [
+            { role: 'system', content: 'You are a helpful study assistant that summarizes text.' },
+            { role: 'user', content: `Summarize this text in 100 words or less: ${pdfText.substring(0, 1500)}` }
+          ],
+          max_tokens: 100
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${process.env.DEEPINFRA_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 15000
+        }
+      );
+
+      const summary = summaryResponse.data.choices[0]?.message.content;
+      if (!summary) {
+        throw new Error('No summary content from DeepInfra');
+      }
+      console.log('[PDF] Summary:', summary.substring(0, 100) + '...');
+      res.json({
+        success: true,
+        summary,
+        pages: data.numpages
+      });
+    } catch (error) {
+      console.error('[PDF] Error:', {
+        message: error.message,
+        code: error.code,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+      return res.status(500).json({
+        error: 'PDF summarization failed',
+        details: process.env.NODE_ENV === 'development' ? error.message : 'AI service error'
+      });
+    }
   } catch (error) {
-    console.error('PDF processing error:', error);
-    res.status(500).json({
-      error: 'PDF processing failed',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    console.error('[PDF] General error:', {
+      message: error.message,
+      stack: error.stack
+    });
+    return res.status(500).json({
+      error: 'PDF processing error',
+      details: process.env.NODE_ENV === 'development' ? error.message : 'Server error'
     });
   }
 });
 
-// =====================================
-// 7. ERROR HANDLING
-// =====================================
 app.use((req, res) => {
   res.status(404).json({
     error: 'Endpoint not found',
@@ -236,28 +278,25 @@ app.use((req, res) => {
 });
 
 app.use((err, req, res, next) => {
-  console.error(`[${new Date().toISOString()}] ERROR:`, err.stack);
+  console.error('[Global] Error:', {
+    message: err.message,
+    stack: err.stack
+  });
   res.status(500).json({
     error: 'Internal server error',
-    ...(process.env.NODE_ENV === 'development' && { details: err.message })
+    details: process.env.NODE_ENV === 'development' ? err.message : 'Server error'
   });
 });
 
-// =====================================
-// 8. SERVER START
-// =====================================
 const PORT = process.env.PORT || 3000;
-const HOST = '0.0.0.0'; // REQUIRED for Render
+const HOST = '0.0.0.0';
 
 app.listen(PORT, HOST, () => {
-  console.log(`
-  =========================================
-   StudyBuddy Backend Service RUNNING!
-  =========================================
-  Server: http://${HOST}:${PORT}
-  Health Check: /render-health
-  Environment: ${process.env.NODE_ENV || 'development'}
-  Time: ${new Date().toLocaleString()}
-  =========================================
-  `);
+  console.log(
+    `\n=== StudyBuddy Backend RUNNING ===\n` +
+    `Server: http://${HOST}:${PORT}\n` +
+    `Health Check: /render-health\n` +
+    `Environment: ${process.env.NODE_ENV || 'development'}\n` +
+    `Time: ${new Date().toISOString()}\n`
+  );
 });
