@@ -1,168 +1,83 @@
-import React, { useState, useRef } from 'react';
-import { FileUp, X, AlertCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { toast } from 'react-hot-toast';
 
-interface PDFUploaderProps {
-  onFileContent: (content: string) => void;
-}
+// Hardcode backend URL to avoid undefined issues
+const VITE_API_URL = 'https://studybuddy-backend-8smv.onrender.com';
 
-const PDFUploader: React.FC<PDFUploaderProps> = ({ onFileContent }) => {
+const PDFUploader: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [summary, setSummary] = useState<string>('');
+  const [error, setError] = useState<string>('');
 
-  const resetFile = () => {
-    setFile(null);
-    setError(null);
-    setUploading(false);
-    setUploadProgress(0);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
+  console.log('[PDFUploader] VITE_API_URL:', VITE_API_URL);
 
-  const validateFile = (file: File): boolean => {
-    // Check file type
-    if (!file.type.includes('pdf')) {
-      setError('Please upload a PDF file');
-      return false;
-    }
-
-    // Check file size (5MB max)
-    if (file.size > 5 * 1024 * 1024) {
-      setError('File size exceeds 5MB limit');
-      return false;
-    }
-
-    return true;
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setError(null);
-    const selectedFile = e.target.files?.[0];
-    
-    if (!selectedFile) return;
-    
-    if (validateFile(selectedFile)) {
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files[0]) {
+      const selectedFile = event.target.files[0];
+      if (selectedFile.size > 500 * 1024) {
+        setError('File too large (max 500KB)');
+        toast.error('File too large');
+        return;
+      }
+      if (selectedFile.type !== 'application/pdf') {
+        setError('Only PDF files allowed');
+        toast.error('Only PDF files allowed');
+        return;
+      }
       setFile(selectedFile);
+      setError('');
     }
   };
 
-  const simulateFileReading = async () => {
-    setUploading(true);
-    setUploadProgress(0);
-    
-    // Simulate progress
-    for (let i = 0; i <= 100; i += 10) {
-      setUploadProgress(i);
-      await new Promise(resolve => setTimeout(resolve, 200));
+  const handleUpload = async () => {
+    if (!file) {
+      setError('No file selected');
+      toast.error('No file selected');
+      return;
     }
-    
-    // Mock PDF content extraction (in a real app, we'd use a PDF parser library)
-    const mockContent = `This is a sample text extracted from the PDF titled "${file?.name}". 
-    In a real application, we would use a PDF parser library to extract the actual text content.
-    This document appears to cover academic topics related to various subjects.
-    
-    The content includes several paragraphs discussing theoretical concepts and practical applications.
-    There are references to research studies and empirical data supporting the main arguments.
-    
-    Several key points are highlighted throughout the document, emphasizing important concepts and methodologies.
-    The author provides a comprehensive analysis of the subject matter, drawing on established frameworks.
-    
-    Charts and figures in the document illustrate statistical trends and comparative analyses.
-    The conclusion summarizes the main findings and suggests implications for future research.`;
-    
-    onFileContent(mockContent);
-    setUploading(false);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      console.log('[PDFUploader] Uploading to:', `${VITE_API_URL}/api/pdf/upload`, {
+        fileName: file.name,
+        fileSize: file.size / 1024 + 'KB'
+      });
+      const response = await fetch(`${VITE_API_URL}/api/pdf/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const text = await response.text();
+      console.log('[PDFUploader] Raw response:', text);
+
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.status} ${text}`);
+      }
+
+      try {
+        const data = JSON.parse(text);
+        setSummary(data.summary || 'No summary returned');
+        toast.success('PDF summarized successfully!');
+      } catch (jsonError) {
+        console.error('[PDFUploader] JSON parse error:', jsonError, 'Raw text:', text);
+        throw new Error('Invalid server response');
+      }
+    } catch (err: any) {
+      console.error('[PDFUploader] Error:', err.message);
+      setError(err.message || 'Failed to summarize PDF');
+      toast.error('Failed to summarize PDF');
+    }
   };
 
   return (
-    <div className="w-full">
-      {!file ? (
-        <div 
-          className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-primary-500 transition-colors"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            const droppedFile = e.dataTransfer.files[0];
-            if (droppedFile && validateFile(droppedFile)) {
-              setFile(droppedFile);
-            }
-          }}
-        >
-          <FileUp className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-          <p className="text-lg font-medium text-gray-700 mb-2">
-            Drag and drop your PDF here
-          </p>
-          <p className="text-sm text-gray-500 mb-4">
-            Max file size: 5MB, text-based PDFs only
-          </p>
-          <input
-            type="file"
-            ref={fileInputRef}
-            className="hidden"
-            accept=".pdf"
-            onChange={handleFileChange}
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="btn btn-primary"
-          >
-            Browse files
-          </button>
-          
-          {error && (
-            <div className="mt-4 text-error flex items-center gap-2 justify-center">
-              <AlertCircle size={16} />
-              <span>{error}</span>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="border rounded-lg p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <FileUp size={24} className="text-primary-600" />
-              <div className="truncate max-w-xs">
-                <p className="font-medium">{file.name}</p>
-                <p className="text-xs text-gray-500">
-                  {(file.size / 1024).toFixed(1)} KB
-                </p>
-              </div>
-            </div>
-            
-            <button
-              onClick={resetFile}
-              className="text-gray-500 hover:text-gray-700"
-              aria-label="Remove file"
-            >
-              <X size={20} />
-            </button>
-          </div>
-          
-          {uploading ? (
-            <div className="w-full">
-              <div className="flex justify-between text-xs mb-1">
-                <span>Extracting text...</span>
-                <span>{uploadProgress}%</span>
-              </div>
-              <progress 
-                className="progress progress-primary w-full" 
-                value={uploadProgress} 
-                max="100"
-              ></progress>
-            </div>
-          ) : (
-            <button
-              onClick={simulateFileReading}
-              className="btn btn-primary w-full"
-            >
-              Process PDF
-            </button>
-          )}
-        </div>
-      )}
+    <div style={{ padding: '20px' }}>
+      <h2>Upload PDF</h2>
+      <input type="file" accept=".pdf" onChange={handleFileChange} />
+      <button onClick={handleUpload} disabled={!file}>Upload</button>
+      {error && <p style={{ color: 'red' }}>{error}</p>}
+      {summary && <p>Summary: {summary}</p>}
     </div>
   );
 };

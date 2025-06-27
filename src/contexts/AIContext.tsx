@@ -1,47 +1,53 @@
-import React, { createContext, useState, useContext } from 'react';
+import React, { createContext, useContext, useState, ReactNode } from 'react';
 
-type Message = {
-  sender: 'user' | 'ai';
-  text: string;
-};
-
-type AIContextType = {
-  messages: Message[];
-  sendMessage: (text: string) => Promise<void>;
+interface AIContextType {
+  response: string | null;
   isLoading: boolean;
-};
+  error: string | null;
+  askQuestion: (question: string) => Promise<void>;
+}
 
 const AIContext = createContext<AIContextType | undefined>(undefined);
 
-export const AIProvider = ({ children }: { children: React.ReactNode }) => {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+export const AIProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [response, setResponse] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const sendMessage = async (text: string) => {
+  // Debug VITE_API_URL
+  const VITE_API_URL = import.meta.env.VITE_API_URL || 'https://studybuddy-backend-8smv.onrender.com';
+  console.log('[AIContext] BACKEND_URL:', VITE_API_URL);
+  console.log('[AIContext] env vars:', import.meta.env);
+
+  const askQuestion = async (question: string) => {
     setIsLoading(true);
-    const userMessage: Message = { sender: 'user', text };
-    setMessages(prev => [...prev, userMessage]);
-    
+    setError(null);
+    setResponse(null);
+
     try {
-      const response = await fetch('http://localhost:3000/api/ai/ask', {
+      console.log('[AIContext] Calling backend:', `${VITE_API_URL}/api/ask`, { question });
+      const res = await fetch(`${VITE_API_URL}/api/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: text })
+        body: JSON.stringify({ question })
       });
-      const data = await response.json();
-      setMessages(prev => [...prev, { sender: 'ai', text: data.response }]);
-    } catch (error) {
-      setMessages(prev => [...prev, { 
-        sender: 'ai', 
-        text: 'Error: ' + (error instanceof Error ? error.message : 'Failed to get response')
-      }]);
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'AI request failed');
+      }
+
+      setResponse(data.response);
+    } catch (err: any) { // Explicitly type err as any
+      console.error('[AIContext] API Error:', err);
+      setError(err.message || 'AI processing failed');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <AIContext.Provider value={{ messages, sendMessage, isLoading }}>
+    <AIContext.Provider value={{ response, isLoading, error, askQuestion }}>
       {children}
     </AIContext.Provider>
   );
@@ -50,7 +56,7 @@ export const AIProvider = ({ children }: { children: React.ReactNode }) => {
 export const useAI = () => {
   const context = useContext(AIContext);
   if (!context) {
-    throw new Error('useAI must be used within an AIProvider');
+    throw new Error('useAI must be used within AIProvider');
   }
   return context;
 };
